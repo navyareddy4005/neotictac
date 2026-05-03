@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Neo-TicTac Elite // Neural Interface</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;500;800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="blob b1"></div>
+<div class="blob b2"></div>
+<div class="blur-overlay"></div>
+
+<div id="mode-modal" class="modal-overlay">
+    <div class="modal-content glass">
+        <h2>System Protocol</h2>
+        <div class="mode-options">
+            <div class="mode-card" onclick="goToNames(true)">
+                <div class="icon">◈</div>
+                <h3>Neural Link</h3>
+                <p>Human vs AI Engine</p>
+            </div>
+            <div class="mode-card" onclick="goToNames(false)">
+                <div class="icon">◓</div>
+                <h3>Local Breach</h3>
+                <p>Human vs Human</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="name-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content glass">
+        <h2>Assign Identities</h2>
+        <input type="text" id="p1-name" placeholder="Primary User (X)" maxlength="12">
+        <input type="text" id="p2-name" placeholder="Secondary User (O)" maxlength="12">
+        <button class="btn-main" onclick="finalizeSetup()">Initialize</button>
+    </div>
+</div>
+
+<div id="result-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content glass winner-card">
+        <h1 id="result-msg">Result</h1>
+        <div class="result-actions">
+            <button class="btn-main" onclick="resetBoard()">Re-Run</button>
+            <button class="btn-link" onclick="location.reload()">Terminate</button>
+        </div>
+    </div>
+</div>
+
+<div class="main-dashboard">
+    <div class="side-panel left glass">
+        <div class="panel-tag">USER_01</div>
+        <div class="profile">
+            <div class="avatar x-border">X</div>
+            <h2 id="display-n1">---</h2>
+            <div class="score-box">WINS: <span id="s-x">0</span></div>
+        </div>
+        <div class="neural-log" id="user-log">
+            <p>> SYSTEM_READY</p>
+            <p>> WAITING_FOR_INPUT...</p>
+        </div>
+    </div>
+
+    <div class="center-content">
+        <div class="game-header">
+            <div class="status-pulse" id="mode-badge">Standby</div>
+            <h1>Neo-TicTac</h1>
+        </div>
+        
+        <div class="board-container">
+            <div class="board" id="board"></div>
+        </div>
+
+        <div class="draw-pill">
+            STALEMATES: <span id="s-d">0</span>
+        </div>
+    </div>
+
+    <div class="side-panel right glass">
+        <div class="panel-tag">USER_02</div>
+        <div class="profile">
+            <div class="avatar o-border">O</div>
+            <h2 id="display-n2">---</h2>
+            <div class="score-box">WINS: <span id="s-o">0</span></div>
+        </div>
+        <div class="neural-log" id="ai-log">
+            <p>> NEURAL_CORE_IDLE</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    let board = ["","","","","","","","",""];
+    let isAi = true, nameX = "", nameO = "", currentPlayer = "X", active = false;
+    let scores = {X: 0, O: 0, D: 0};
+
+    const aiLog = document.getElementById("ai-log");
+
+    function logAI(msg) {
+        const p = document.createElement("p");
+        p.innerText = `> ${msg}`;
+        aiLog.prepend(p);
+        if(aiLog.children.length > 8) aiLog.lastChild.remove();
+    }
+
+    function goToNames(aiChoice) {
+        isAi = aiChoice;
+        document.getElementById("mode-modal").style.display = "none";
+        document.getElementById("name-modal").style.display = "flex";
+        document.getElementById("p2-name").style.display = isAi ? "none" : "block";
+    }
+
+    function finalizeSetup() {
+        nameX = document.getElementById("p1-name").value || "User_X";
+        nameO = isAi ? "Neural_AI" : (document.getElementById("p2-name").value || "User_O");
+        document.getElementById("display-n1").innerText = nameX;
+        document.getElementById("display-n2").innerText = nameO;
+        document.getElementById("mode-badge").innerText = isAi ? "Neural_Link_Active" : "Local_Breach_Active";
+        document.getElementById("name-modal").style.display = "none";
+        active = true;
+        draw();
+    }
+
+    function draw() {
+        const b = document.getElementById("board");
+        b.innerHTML = "";
+        board.forEach((val, i) => {
+            const cell = document.createElement("div");
+            cell.className = `cell ${val.toLowerCase()}`;
+            cell.innerHTML = `<span>${val}</span>`;
+            cell.onclick = () => move(i);
+            b.appendChild(cell);
+        });
+    }
+
+    function move(i) {
+        if (!active || board[i]) return;
+        board[i] = currentPlayer;
+        draw();
+        if (check()) return;
+
+        if (isAi) {
+            active = false;
+            logAI("CALCULATING_OPTIMAL_PATH...");
+            fetch("/ai-move", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({board: board})
+            }).then(r => r.json()).then(d => {
+                d.nodes.forEach(n => logAI(`NODE_${n.index}_VAL: ${n.score}`));
+                board[d.move] = "O";
+                active = true;
+                draw();
+                check();
+            });
+        } else {
+            currentPlayer = currentPlayer === "X" ? "O" : "X";
+        }
+    }
+
+    function check() {
+        const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+        for (let w of wins) {
+            let [a,b,c] = w;
+            if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                end(board[a]); return true;
+            }
+        }
+        if (!board.includes("")) { end("draw"); return true; }
+        return false;
+    }
+
+    function end(res) {
+        active = false;
+        const msg = document.getElementById("result-msg");
+        if (res === "draw") {
+            msg.innerText = "Condition: Stalemate";
+            scores.D++;
+        } else {
+            const winner = res === "X" ? nameX : nameO;
+            msg.innerText = `${winner} Victorious`;
+            scores[res]++;
+        }
+        document.getElementById("s-x").innerText = scores.X;
+        document.getElementById("s-o").innerText = scores.O;
+        document.getElementById("s-d").innerText = scores.D;
+        document.getElementById("result-modal").style.display = "flex";
+    }
+
+    function resetBoard() {
+        board = ["","","","","","","","",""];
+        currentPlayer = "X";
+        active = true;
+        document.getElementById("result-modal").style.display = "none";
+        draw();
+    }
+</script>
+</body>
+</html>
